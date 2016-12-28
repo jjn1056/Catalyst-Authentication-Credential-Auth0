@@ -2,6 +2,7 @@ package Catalyst::Authentication::Credential::Auth0::Oauth2;
 
 use Moo;
 use HTTP::Tiny;
+use Devel::Dwarn;
 
 our $VERSION = '0.001';
 
@@ -54,8 +55,6 @@ sub BUILDARGS {
   return $config;
 }
 
-  use Devel::Dwarn;
-
 sub authenticate {
   my ($self, $ctx, $realm, $auth_info) = @_;
   if(my $code = $ctx->req->query_parameters->{code}) {
@@ -71,13 +70,8 @@ sub authenticate {
         redirect_uri => $redirect_uri,
       ]);
 
-    Dwarn $res;
-    
+    Dwarn $res;        
   }
-
-
-
-
   return @_;
 }
 
