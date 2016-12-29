@@ -1,84 +1,81 @@
 package Catalyst::Authentication::Credential::Auth0::Oauth2;
 
 use Moo;
-use HTTP::Tiny;
+use WebService::Auth0;
+use JSON::MaybeXS;
 
 our $VERSION = '0.001';
 
-has domain => (
-  is=>'ro',
-  required=>1);
+has [qw/client_secret client_id domain/] => (is=>'ro', required=>1);
 
-has client_id => (
+has _redirect_uri => (
   is=>'ro',
-  required=>1);
+  init_arg=>'redirect_uri',
+  predicate=>'has_redirect_uri');
 
-has client_secret => (
-  is=>'ro',
-  required=>1);
-
-has redirect_uri => (is=>'ro');
-
-has authorization_url => (
-  is=>'ro',
+has auth0 => (
+  is=>'bare',
   lazy=>1,
   required=>1,
-  default=>sub {"https://${\$_[0]->domain}/authorize"});
+  builder=>'_build_auth0',
+  handles=>[qw/get_token_from_authorization_code
+    get_userinfo_from_access_token/],
+);
 
-has token_url => (
-  is=>'ro',
-  lazy=>1,
-  required=>1,
-  default=>sub {"https://${\$_[0]->domain}/oauth/token"});
+  sub _build_auth0 {
+    return WebService::Auth0->new(
+      client_id => $_[0]->client_id,
+      client_secret => $_[0]->client_secret,
+      domain => $_[0]->domain,
+    );
+  }
 
-has user_info_url => (
-  is=>'ro',
-  lazy=>1,
-  required=>1,
-  default=>sub {"https://${\$_[0]->domain}/userinfo"});
-
-has api_url => (
-  is=>'ro',
-  lazy=>1,
-  required=>1,
-  default=>sub {"https://${\$_[0]->domain}/api"});
-
-has ua => (
-  is=>'ro',
-  lazy=>1,
-  required=>1,
-  default=>sub {HTTP::Tiny->new});
+sub redirect_uri {
+  my ($self, $c, $params) = @_;
+  return ($params||+{})->{redirect_uri} if exists(($params||+{})->{redirect_uri});
+  return $self->_redirect_uri if $self->has_redirect_uri;
+  my $redirect_uri = $c->req->uri->clone;
+  $redirect_uri->query(undef);
+  return $redirect_uri;
+}
 
 sub BUILDARGS {
   my ($self, $config, $ctx, $realm) = @_;
   return $config;
 }
 
-  use Devel::Dwarn;
-
 sub authenticate {
-  my ($self, $ctx, $realm, $auth_info) = @_;
-  if(my $code = $ctx->req->query_parameters->{code}) {
-    (my $redirect_uri = $self->redirect_uri ||
-      $ctx->req->uri->clone)->query(undef);
+  my ($self, $c, $realm, $params) = @_;
+  if(my $code = $c->req->query_parameters->{code}) {    
+    my $auth_res = $self->get_token_from_authorization_code(
+      code => $code,
+      redirect_uri => $self->redirect_uri($c, $params),
+    );
+
+    my $auth_data = decode_json($auth_res->{content});
+
+    use Devel::Dwarn;
+    Dwarn $auth_data;
+
+    my $userinfo_res = $self->get_userinfo_from_access_token(
+      $auth_data->{access_token});
+
+    use Devel::Dwarn;
+    Dwarn $userinfo_res;
+
+    my $userinfo_data = decode_json($userinfo_res->{content});
+
+    use Devel::Dwarn;
+    Dwarn $userinfo_data;
     
-    my $res = $self->ua->post_form(
-      $self->token_url, [
-        client_id => $self->client_id,
-        client_secret => $self->client_secret,
-        grant_type => 'authorization_code',
-        code => $code,
-        redirect_uri => $redirect_uri,
-      ]);
+    my $user = $realm->find_user($userinfo_data, $c);
+    $c->log->warn("Did not find user in realm $realm") if $c->debug & !$user;
 
-    Dwarn $res;
-    
-  }
+    return $user;
+  }  
 
-
-
-
-  return @_;
+  $c->log->warn("Attempt to authenticate without a code") if $c->debug;
+  return;
 }
 
 1;
