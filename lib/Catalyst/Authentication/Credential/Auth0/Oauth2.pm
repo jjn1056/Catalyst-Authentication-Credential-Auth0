@@ -55,18 +55,18 @@ sub authenticate {
     my $auth_data = decode_json($auth_res->{content});
 
     use Devel::Dwarn;
-    Dwarn $auth_data;
+    #Dwarn $auth_data;
 
     my $userinfo_res = $self->get_userinfo_from_access_token(
       $auth_data->{access_token});
 
     use Devel::Dwarn;
-    Dwarn $userinfo_res;
+    #Dwarn $userinfo_res;
 
     my $userinfo_data = decode_json($userinfo_res->{content});
 
     use Devel::Dwarn;
-    Dwarn $userinfo_data;
+    #Dwarn $userinfo_data;
     
     my $user = $realm->find_user($userinfo_data, $c);
     $c->log->warn("Did not find user in realm $realm") if $c->debug & !$user;

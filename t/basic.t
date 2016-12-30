@@ -7,17 +7,15 @@ use Test::Most;
   sub auth0_cb :Path(/auth0/callback) {
     my ($self, $c) = @_;
     my $return_to = $c->req->query_parameters->{return_to};
-    $c->authenticate({
-      redirect_uri=>$c->uri_for($c->action, {return_to=>$return_to}),
-    });
-    $c->res->redirect($return_to); $c->detach;
+    my $redirect_uri = $c->uri_for($c->action, {return_to=>$return_to});
+    $c->authenticate({redirect_uri=>$redirect_uri});
+    $c->res->redirect($return_to); 
   }
 
   sub protected :Local Args(0) {
     my ($self, $c) = @_;
     $c->detach('login') unless $c->user_exists;
-    use Data::Dumper;
-    $c->res->body('You got access!:'. Dumper($c->user));
+    $c->res->body("You got access ${\$c->user->{name}}!"); 
   }
 
   sub login :Local Args(0) {
@@ -27,8 +25,21 @@ use Test::Most;
         <head>
           <title>Needs Login!</title>
           <script src="https://cdn.auth0.com/js/lock/10.6/lock.min.js"></script>
+        </head>
+        <body>
+          <div id="root" style="
+            width: 320px; 
+            margin: 40px auto; 
+            padding: 10px; 
+            border-style: dashed; 
+            border-width: 1px; 
+            box-sizing: 
+            border-box;">
+              embedded area
+          </div>
           <script>
             var lock = new Auth0Lock('$ENV{AUTH0_CLIENT_ID}', '$ENV{AUTH0_DOMAIN}', {
+              container: 'root',
               auth: {
                 redirectUrl: '${\$c->uri_for($self->action_for('auth0_cb'), {return_to=>${\$c->req->uri}})}',
                 responseType: 'code',
@@ -37,51 +48,24 @@ use Test::Most;
                 }
               }
             });
+            lock.show();
           </script>
-        </head>
-        <body>
-          <button onclick="lock.show();">Login</button>
         </body>
       </html>
-      ]);
+    ]);
   }
 
   $INC{'MyApp/Controller/Root.pm'} = __FILE__;
 
   package MyApp;
 
-  use Catalyst::Authentication::Store::Null;
-  sub Catalyst::Authentication::Store::Null::for_session {
-    my ( $self, $c, $user ) = @_;
-    warn "111" x 1000;
-    my %flat = %{$user};
-
-    # Removed all the keys that are objects since the
-    # cookie store doesn't want to deal with it.
-    delete $flat{email_verified};
-    delete $flat{is_verified};
-    delete $flat{installed};
-    delete $flat{verified};
-    delete $flat{identities};
-
-    use Devel::Dwarn; Dwarn \%flat;
-    return \%flat;
-  }
-
-  sub Catalyst::Authentication::Store::Null::from_session {
-    my ( $self, $c, $user ) = @_;
-    return bless $user, 'Catalyst::Authentication::User::Hash';
-  }
-
- 
   use Catalyst qw/
     Session
     Session::State::Cookie
-    Session::Store::Cookie
+    Session::Store::Dummy
     Authentication/;
 
   MyApp->config(
-    'Plugin::Session' => {storage_secret_key => 'abc123'},
     'Plugin::Authentication' => {
       default => {
         credential => {
@@ -93,7 +77,8 @@ use Test::Most;
         store => {
           class => 'Null',
         },
-      },
+      }, 
+
     },
     'Controller::Root' => { namespace => '' },
   );
