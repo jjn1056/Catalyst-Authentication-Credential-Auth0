@@ -8,8 +8,9 @@ use Test::Most;
     my ($self, $c) = @_;
     my $return_to = $c->req->query_parameters->{return_to};
     my $redirect_uri = $c->uri_for($c->action, {return_to=>$return_to});
-    $c->authenticate({redirect_uri=>$redirect_uri});
-    $c->res->redirect($return_to); 
+    $c->authenticate({redirect_uri=>$redirect_uri}) ?
+      $c->res->redirect($return_to) :
+        $c->res->body("Error Logging In...");
   }
 
   sub protected :Local Args(0) {
